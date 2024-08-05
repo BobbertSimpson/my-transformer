@@ -7,3 +7,5 @@ While reading/implmenenting the paper I came across a bunch of NLP concepts and 
 #### Dropout
 Dropout is the zeroing out of random elements of the input vector with probability p during training. This is done to avoid overfitting.
 #### Label Smoothing
+label smoothing is the same as one-hot encoding but the `1` is substituted by `1 - e` for some 0 < e < 1. And we distribute the `e` among the zeros
+#### 

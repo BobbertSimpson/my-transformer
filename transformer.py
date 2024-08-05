@@ -38,15 +38,18 @@ class PositionalEncoding(nn.Module):
 
         # Compute the positional encodings once in log space.
         position = torch.arange(0, max_len).unsqueeze(1)
+        # The divisor for both functions is the same
         div_term = torch.exp(
             torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)
         )
+        pe = torch.zeros(max_len, d_model)
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
 
     def forward(self, x):
+        # we don't need the params to be learnable so we set requires_grad to false
         x = x + self.pe[:, : x.size(1)].requires_grad_(False)
         return self.dropout(x)
         
@@ -80,8 +83,44 @@ class FFN(nn.Module):
         return self.W2(self.dropout(self.W1(src)))
 
 class MHA(nn.Module):
-    def __init__(self, 
+    def __init__(self, n_heads, d_model, dropout=0.1):
+        "Take in model size and number of heads."
+        super(self).__init__()
+        assert d_model % h == 0
+        # We assume d_v always equals d_k
+        self.d_k = d_model // n_heads
+        self.n_h = n_heads
+        self.linears = clones(nn.Linear(d_model, d_model), 4)
+        self.dropout = nn.Dropout(p=dropout)
 
+    def forward(self, query, key, value, mask=None):
+        "Implements Figure 2"
+        if mask is not None:
+            # Same mask applied to all h heads.
+            mask = mask.unsqueeze(1)
+        nbatches = query.size(0)
+
+        # 1) Do all the linear projections in batch from d_model => h x d_k
+        query, key, value = [
+            lin(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+            for lin, x in zip(self.linears, (query, key, value))
+        ]
+
+        # 2) Apply attention on all the projected vectors in batch.
+        x, self.attn = attention(
+            query, key, value, mask=mask, dropout=self.dropout
+        )
+
+        # 3) "Concat" using a view and apply a final linear.
+        x = (
+            x.transpose(1, 2)
+            .contiguous()
+            .view(nbatches, -1, self.h * self.d_k)
+        )
+        del query
+        del key
+        del value
+        return self.linears[-1](x)
 
 class Generator(nn.Module):
     def __init__(self, d_model: int, trg_vocab_size: int):
